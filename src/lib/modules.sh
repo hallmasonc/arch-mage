@@ -57,7 +57,7 @@ disk_format () {
     # check disk type and set mount options accordingly
     if [[ $(lsblk "$l_disk" -Jdo NAME,ROTA | grep -oP '"rota": \K(true|false)') == "false" ]]; then
         # ssd
-        local mountopts="autodefrag,discard=async,compress-force=zstd:3,noatime,space_cache,ssd"
+        local mountopts="autodefrag,discard=async,compress-force=zstd:3,noatime,space_cache=v2,ssd"
     else
         # hdd
         local mountopts="autodefrag,compress-force=zstd:3,noatime"
