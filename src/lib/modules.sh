@@ -198,15 +198,11 @@ EOF
 EOF
     fi
 
-    # setting up grub bootloader
-    info_print "Setting up grub config... "
-    UUID=$(blkid -s UUID -o value "$l_primary_part")
+    # configure grub bootloader
     if [[ -n $l_luks_pass ]]; then
+        info_print "Setting up grub kernel parameters... "
+        UUID=$(blkid -s UUID -o value "$l_primary_part")
         sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&rd.luks.name=$UUID=cryptroot root=$l_btrfs," /mnt/etc/default/grub
-        read -r "Pause"
-    else
-        sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&root=$l_btrfs," /mnt/etc/default/grub
-        read -r "Pause"
     fi
 
     # chroot and configure the system to boot

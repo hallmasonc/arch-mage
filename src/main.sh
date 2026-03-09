@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -x
-
 ## source(s)
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 # shellcheck disable=SC1091
