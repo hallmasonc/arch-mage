@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 ## source(s)
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 # shellcheck disable=SC1091
@@ -14,7 +16,7 @@ source "$SCRIPT_DIR/lib/modules.sh"
 DISK=""
 ESP=""
 BTRFS=""
-CRYPT_ROOT=""
+PRIMARY_PART=""
 KBLAYOUT=""
 LUKS_PASS=""
 ROOT_PASS=""
@@ -41,9 +43,17 @@ main () {
     until kblayout_selector "KBLAYOUT"; do : ; done
     until locale_selector "LOCALE"; do : ; done
     until disk_selector "DISK"; do : ; done
-    until lukspass_input "LUKS_PASS"; do : ; done
-    until disk_partition "$DISK" "ESP" "CRYPT_ROOT"; do : ; done
-    until disk_format "$DISK" "$ESP" "$LUKS_PASS" "$CRYPT_ROOT" "BTRFS"; do : ; done
+
+    # prompt for encryption
+    input_print "Would you like to encrypt the primary partition? [y/n]: "
+    read -r encrypt_response
+    if [[ "${encrypt_response,,}" =~ ^(yes|y)$ ]]; then
+        until lukspass_input "LUKS_PASS"; do : ; done
+    fi
+
+    # resume disk setup
+    until disk_partition "$DISK" "ESP" "PRIMARY_PART"; do : ; done
+    until disk_format "$DISK" "$ESP" "$LUKS_PASS" "$PRIMARY_PART" "BTRFS"; do : ; done
 
     # pre-install checks
     until reflector_check; do : ; done
@@ -64,7 +74,7 @@ main () {
 
     # system configuration
     until system_configuration "$HOSTNAME" "$LOCALE" "$KBLAYOUT"; do : ; done
-    until boot_configuration "$CRYPT_ROOT" "$BTRFS"; do : ; done
+    until boot_configuration "$PRIMARY_PART" "$BTRFS" "$LUKS_PASS"; do : ; done
     until pacman_configuration; do : ; done
     until account_configuration "$ROOT_PASS" "$USER_NAME" "$USER_PASS"; do : ; done
 }

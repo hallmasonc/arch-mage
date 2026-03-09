@@ -25,10 +25,10 @@ disk_partition () {
         mklabel gpt \
         mkpart ESP fat32 1MiB 1025MiB \
         set 1 esp on \
-        mkpart CRYPTROOT 1025MiB 100% \
+        mkpart PRIMARY 1025MiB 100% \
 
     l_esp="/dev/disk/by-partlabel/ESP"
-    l_cryptroot="/dev/disk/by-partlabel/CRYPTROOT"
+    l_primary_part="/dev/disk/by-partlabel/PRIMARY"
     
     # inform kernel
     info_print "Informing the kernel about the partition changes."
@@ -39,19 +39,19 @@ disk_partition () {
         eval "$2='$l_esp'"
     fi
     
-    # assign l_cryptroot to the calling function's variable
+    # assign l_primary_part to the calling function's variable
     if [[ -n "$3" ]]; then
-        eval "$3='$l_cryptroot'"
+        eval "$3='$l_primary_part'"
     fi
 }
 
 disk_format () {
     # variable(s)
+    local l_btrfs
     local l_disk="$1"
     local l_esp="$2"
     local l_luks_pass="$3"
-    local l_cryptroot="$4"
-    local l_btrfs="/dev/mapper/cryptroot"
+    local l_primary_part="$4"
     local subvols=(snapshots var_pkgs var_log home root srv)
     
     # check disk type and set mount options accordingly
@@ -64,19 +64,26 @@ disk_format () {
     fi
 
     # format esp as fat32
-    info_print "Formatting the EFI Partition as FAT32... "
+    info_print "Formatting the EFI partition as FAT32... "
     mkfs.fat -F 32 "$l_esp" &>/dev/null
     
-    # new luks container for root
-    info_print "Creating LUKS Container for the root partition... "
-    echo -n "$l_luks_pass"  | cryptsetup luksFormat "$l_cryptroot" -d - &>/dev/null
-    echo -n "$l_luks_pass"  | cryptsetup open "$l_cryptroot" cryptroot -d - 
-    
-    # format luks container as btrfs
-    info_print "Formatting the LUKS container as btrfs... "
+    if [[ -n $l_luks_pass ]]; then
+        # new luks container for root
+        info_print "Creating LUKS Container for the root partition... "
+        echo -n "$l_luks_pass"  | cryptsetup luksFormat "$l_primary_part" -d - &>/dev/null
+        echo -n "$l_luks_pass"  | cryptsetup open "$l_primary_part" cryptroot -d -
+
+        info_print "Formatting the LUKS container as btrfs... "
+        l_btrfs="/dev/mapper/cryptroot"
+    else
+        info_print "Formatting the primary partition as btrfs... "
+        l_btrfs=$(blkid -t PARTLABEL=PRIMARY -o device)
+    fi
+
+    # format primary partition as btrfs
     mkfs.btrfs "$l_btrfs" &>/dev/null
     mount "$l_btrfs" /mnt
-
+    
     # create btrfs subvolumes
     info_print "Creating btrfs subvolumes... "
     for subvol in '' "${subvols[@]}"; do
@@ -175,19 +182,32 @@ EOF
 
 boot_configuration () {
     # variable(s)
-    local l_cryptroot="$1"
+    local l_primary_part="$1"
     local l_btrfs="$2"
+    local l_luks_pass="$3"
 
     # configure /etc/mkinitcpio.conf
     info_print "Configuring hooks in /etc/mkinitcpio.conf... "
-    cat > /mnt/etc/mkinitcpio.conf <<EOF
-    HOOKS=(systemd autodetect keyboard sd-vconsole modconf block sd-encrypt filesystems)
+    if [[ -n $l_luks_pass ]]; then
+        cat > /mnt/etc/mkinitcpio.conf <<EOF
+        HOOKS=(systemd autodetect keyboard sd-vconsole modconf block sd-encrypt filesystems)
 EOF
+    else
+        cat > /mnt/etc/mkinitcpio.conf <<EOF
+        HOOKS=(systemd autodetect keyboard sd-vconsole modconf block filesystems)
+EOF
+    fi
 
-    # setting up LUKS2 encryption in grub
+    # setting up grub bootloader
     info_print "Setting up grub config... "
-    UUID=$(blkid -s UUID -o value "$l_cryptroot")
-    sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&rd.luks.name=$UUID=cryptroot root=$l_btrfs," /mnt/etc/default/grub
+    UUID=$(blkid -s UUID -o value "$l_primary_part")
+    if [[ -n $l_luks_pass ]]; then
+        sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&rd.luks.name=$UUID=cryptroot root=$l_btrfs," /mnt/etc/default/grub
+        read -r "Pause"
+    else
+        sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&root=$l_btrfs," /mnt/etc/default/grub
+        read -r "Pause"
+    fi
 
     # chroot and configure the system to boot
     info_print "Configuring snapper, GRUB, and generating initramfs..."
