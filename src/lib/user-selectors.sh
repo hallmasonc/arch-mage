@@ -112,7 +112,7 @@ disk_selector () {
 
     # list disks
     info_print "Available disks for the installation: "
-    mapfile -t ARR < <(lsblk -dpno NAME,SIZE,MODEL | grep -P "/dev/sd|nvme|vd");
+    mapfile -t ARR < <(lsblk -dpno NAME,SIZE,MODEL | grep -P "/dev/sd|nvme|mmc|vd");
 
     # user input
     PS3="Please select the number of the corresponding disk (e.g. 1): "
