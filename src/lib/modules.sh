@@ -4,7 +4,7 @@
 disk_partition () {
     # variable(s)
     local l_disk="$1"
-
+    
     # warn user and confirm
     error_print "The following operation is destructive and irreversible, proceed with caution."
     input_print "All data on disk $l_disk will be erased and a new partition table will be made. Continue? [y/n]: "
@@ -13,7 +13,13 @@ disk_partition () {
         error_print "Quitting..."
         exit
     fi
-    
+
+    # wipe signatures from each partition
+    for partition in $(lsblk -lno NAME "$l_disk" | grep -v "$(echo "$l_disk" | awk -F/ '{ print $3 }')$"); do
+        info_print "Wiping signatures /dev/$partition... "
+        wipefs -af "/dev/$partition" &>/dev/null
+    done
+
     # erase disk
     info_print "Wiping MBR and GPT tables from $l_disk... "
     wipefs -af "$l_disk" &>/dev/null
